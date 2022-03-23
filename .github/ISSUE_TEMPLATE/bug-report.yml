@@ -1,0 +1,82 @@
+name: Bug Report # Сообщение об ошибке
+description: Создайте отчет, который поможет нам исправить имеющиеся проблемы
+title: "<заголовок>"
+labels: ["bug"]
+body:
+- type: textarea
+  id: actual-behaviour
+  attributes:
+    label: Описание ошибки
+    description: Четкое и краткое описание того, в чем заключается ошибка.
+  validations:
+    required: true
+
+- type: textarea
+  id: expected-behaviour
+  attributes:
+    label: Ожидаемое поведение
+    description: Четкое и краткое описание того, что вы ожидали увидеть.
+  validations:
+    required: true
+
+- type: textarea
+  id: steps-to-reproduce
+  attributes:
+    label: Воспроизведение ошибки
+    description: Шаги воспроизведения.
+    value: |
+      1. Перейти в '...'
+      2. Кликнуть на '....'
+      3. Прокрутить вниз до '....'
+      4. Смотреть ошибку
+  validations:
+    required: true
+
+- type: textarea
+  id: screenshots
+  attributes:
+    label: Скриншоты
+    description: Если необходимо, чтобы понять и оценить ошибку, то добавьте скриншоты.
+  validations:
+    required: false
+
+- type: input
+  id: device
+  attributes:
+    label: Девайс
+    placeholder: iPhone 6
+  validations: 
+    required: true
+
+- type: input
+  id: OS
+  attributes:
+    label: ОС
+    placeholder: iOS 8.1
+  validations: 
+    required: true
+
+- type: input
+  id: browser
+  attributes:
+    label: Браузер
+    placeholder: Safari
+  validations: 
+    required: false
+
+- type: input
+  id: app-version
+  attributes:
+    label: Версия приложения
+    description: Профиль -> О приложении (в верхнем правом углу).
+    placeholder: 1.2.1
+  validations: 
+    required: true
+
+- type: textarea
+  id: additional-context
+  attributes:
+    label: Дополнительно
+    description: Добавьте сюда любой другой текст, касающийся этой проблемы.
+  validations: 
+    required: false
