@@ -1,4 +1,4 @@
-name: Сообщение об ошибке
+name: Bug report # Сообщение об ошибке
 description: Создайте отчет, который поможет нам исправить имеющиеся проблемы
 title: "<заголовок>"
 labels: ["bug"]
@@ -68,7 +68,7 @@ body:
   id: app-version
   attributes:
     label: Версия приложения
-    description: Профиль -> О приложении (в верхнем правом углу)
+    description: Профиль -> О приложении (в верхнем правом углу).
     placeholder: 1.2.1
   validations: 
     required: true
