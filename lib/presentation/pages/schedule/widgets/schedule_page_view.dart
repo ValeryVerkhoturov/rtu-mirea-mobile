@@ -4,13 +4,18 @@ import 'package:rtu_mirea_app/common/utils/utils.dart';
 import 'package:rtu_mirea_app/domain/entities/lesson.dart';
 import 'package:rtu_mirea_app/domain/entities/schedule.dart';
 import 'package:rtu_mirea_app/domain/entities/schedule_settings.dart';
+import 'package:rtu_mirea_app/domain/entities/story.dart';
 import 'package:rtu_mirea_app/presentation/bloc/schedule_bloc/schedule_bloc.dart';
-import 'package:rtu_mirea_app/presentation/colors.dart';
+import 'package:rtu_mirea_app/presentation/bloc/stories_bloc/stories_bloc.dart';
+import 'package:rtu_mirea_app/presentation/constants.dart';
 import 'package:rtu_mirea_app/presentation/pages/schedule/widgets/empty_lesson_card.dart';
-import 'package:rtu_mirea_app/presentation/theme.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'lesson_card.dart';
+import 'package:rtu_mirea_app/presentation/typography.dart';
+import 'package:rtu_mirea_app/presentation/theme.dart';
+
+import 'story_item.dart';
 
 class SchedulePageView extends StatefulWidget {
   const SchedulePageView({Key? key, required this.schedule}) : super(key: key);
@@ -18,7 +23,7 @@ class SchedulePageView extends StatefulWidget {
   final Schedule schedule;
 
   @override
-  _SchedulePageViewState createState() => _SchedulePageViewState();
+  State<StatefulWidget> createState() => _SchedulePageViewState();
 }
 
 class _SchedulePageViewState extends State<SchedulePageView> {
@@ -31,6 +36,8 @@ class _SchedulePageViewState extends State<SchedulePageView> {
   late DateTime _selectedDay;
   late int _selectedPage;
   late int _selectedWeek;
+
+  late ScrollController _nestedScrollViewController;
 
   @override
   void initState() {
@@ -46,6 +53,8 @@ class _SchedulePageViewState extends State<SchedulePageView> {
         (BlocProvider.of<ScheduleBloc>(context).state as ScheduleLoaded)
             .scheduleSettings
             .calendarFormat];
+
+    _nestedScrollViewController = ScrollController();
   }
 
   /// check if current date is before [_lastCalendarDay] and after [_firstCalendarDay]
@@ -82,7 +91,7 @@ class _SchedulePageViewState extends State<SchedulePageView> {
           image: AssetImage('assets/images/Saly-18.png'),
           height: 225.0,
         ),
-        Text('Пар нет!', style: DarkTextTheme.title),
+        Text('Пар нет!', style: AppTextStyle.title),
       ],
     );
   }
@@ -157,7 +166,6 @@ class _SchedulePageViewState extends State<SchedulePageView> {
 
       return ListView.separated(
         itemCount: lessons.length,
-        physics: const BouncingScrollPhysics(),
         itemBuilder: (context, i) {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -183,12 +191,45 @@ class _SchedulePageViewState extends State<SchedulePageView> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        TableCalendar(
-          // pageJumpingEnabled: true,
+  Widget _buildPageView() {
+    return PageView.builder(
+      controller: _controller,
+      onPageChanged: (value) {
+        setState(() {
+          // if the pages are moved by swipes
+          if ((value - _selectedPage).abs() == 1) {
+            if (value > _selectedPage) {
+              _selectedDay = _selectedDay.add(const Duration(days: 1));
+            } else if (value < _selectedPage) {
+              _selectedDay = _selectedDay.subtract(const Duration(days: 1));
+            }
+            final int currentNewWeek =
+                CalendarUtils.getCurrentWeek(mCurrentDate: _selectedDay);
+            _selectedWeek = currentNewWeek;
+          }
+          _focusedDay = _validateDayInRange(_selectedDay);
+          _selectedPage = value;
+        });
+      },
+      itemCount: _lastCalendarDay.difference(_firstCalendarDay).inDays,
+      itemBuilder: (context, index) {
+        final DateTime lessonDay = _firstCalendarDay.add(Duration(days: index));
+        final int week = CalendarUtils.getCurrentWeek(mCurrentDate: lessonDay);
+        final int lessonIndex =
+            week >= 1 && week <= CalendarUtils.kMaxWeekInSemester
+                ? lessonDay.weekday - 1
+                : 6;
+        return _buildPageViewContent(context, lessonIndex, week);
+      },
+    );
+  }
+
+  Widget _buildCalendar(bool isDesktop) {
+    return Material(
+      color: AppTheme.colors.background01,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8.0),
+        child: TableCalendar(
           weekendDays: const [DateTime.sunday],
           calendarBuilders: CalendarBuilders(
             markerBuilder: (context, day, events) {
@@ -210,33 +251,44 @@ class _SchedulePageViewState extends State<SchedulePageView> {
               );
             },
           ),
-          calendarFormat: _calendarFormat,
+          calendarFormat: isDesktop ? CalendarFormat.month : _calendarFormat,
           firstDay: _firstCalendarDay,
           lastDay: _lastCalendarDay,
           sixWeekMonthsEnforced: true,
           startingDayOfWeek: StartingDayOfWeek.monday,
           headerStyle: HeaderStyle(
+            formatButtonVisible: !isDesktop,
             formatButtonShowsNext: false,
-            titleTextStyle: DarkTextTheme.captionL,
-            formatButtonTextStyle: DarkTextTheme.buttonS,
+            titleTextStyle: AppTextStyle.captionL.copyWith(
+              color: AppTheme.colors.active,
+            ),
+            formatButtonTextStyle: AppTextStyle.buttonS.copyWith(
+              color: AppTheme.colors.active,
+            ),
             titleTextFormatter: (DateTime date, dynamic locale) {
               String dateStr = DateFormat.yMMMM(locale).format(date);
               String weekStr = _selectedWeek.toString();
               return '$dateStr\nвыбрана $weekStr неделя';
             },
-            formatButtonDecoration: const BoxDecoration(
+            leftChevronIcon:
+                Icon(Icons.chevron_left, color: AppTheme.colors.active),
+            rightChevronIcon:
+                Icon(Icons.chevron_right, color: AppTheme.colors.active),
+            formatButtonDecoration: BoxDecoration(
                 border: Border.fromBorderSide(
-                    BorderSide(color: DarkThemeColors.deactive)),
-                borderRadius: BorderRadius.all(Radius.circular(12.0))),
+                    BorderSide(color: AppTheme.colors.deactive)),
+                borderRadius: const BorderRadius.all(Radius.circular(16.0))),
           ),
-          calendarStyle: const CalendarStyle(
-            rangeHighlightColor: DarkThemeColors.secondary,
+          calendarStyle: CalendarStyle(
+            rangeHighlightColor: AppTheme.colors.secondary,
+            cellAlignment: Alignment.center,
+            cellMargin: const EdgeInsets.all(10),
           ),
           daysOfWeekStyle: DaysOfWeekStyle(
             weekdayStyle:
-                DarkTextTheme.body.copyWith(color: DarkThemeColors.deactive),
-            weekendStyle: DarkTextTheme.body
-                .copyWith(color: DarkThemeColors.deactiveDarker),
+                AppTextStyle.body.copyWith(color: AppTheme.colors.deactive),
+            weekendStyle: AppTextStyle.body
+                .copyWith(color: AppTheme.colors.deactiveDarker),
           ),
           focusedDay: _focusedDay,
           availableCalendarFormats: const {
@@ -248,11 +300,21 @@ class _SchedulePageViewState extends State<SchedulePageView> {
             final int week = CalendarUtils.getCurrentWeek(mCurrentDate: day);
             final int weekday = day.weekday - 1;
 
-            var lessons = _getLessonsByWeek(week, widget.schedule);
+            final lessons = _getLessonsByWeek(week, widget.schedule);
             if (weekday == 6) {
               return [];
             } else {
-              return lessons[weekday];
+              final Map<String, Lesson> uniqueLessonEvents = {};
+
+              for (var lesson in lessons[weekday]) {
+                if (uniqueLessonEvents.containsKey(lesson.timeStart)) {
+                  continue;
+                }
+
+                uniqueLessonEvents[lesson.timeStart] = lesson;
+              }
+
+              return uniqueLessonEvents.values.toList();
             }
           },
           locale: 'ru_RU',
@@ -309,90 +371,150 @@ class _SchedulePageViewState extends State<SchedulePageView> {
           onHeaderLongPressed: (date) {
             // set up the AlertDialog
             AlertDialog alert = AlertDialog(
-                contentPadding: const EdgeInsets.fromLTRB(8.0, 20.0, 8.0, 8.0),
-                backgroundColor: DarkThemeColors.background02,
-                title: const Text("Выберите неделю"),
-                content: Wrap(
-                  spacing: 4.0,
-                  alignment: WrapAlignment.center,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  runAlignment: WrapAlignment.center,
-                  children: [
-                    for (int i = 1; i <= CalendarUtils.kMaxWeekInSemester; i++)
-                      ElevatedButton(
-                        child: Text(i.toString()),
-                        style: ElevatedButton.styleFrom(
-                          primary: DarkThemeColors.primary,
-                          onPrimary: Colors.white,
-                          shadowColor: Colors.transparent,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            if (i == 1) {
-                              _selectedDay = CalendarUtils.getDaysInWeek(i)[
-                                  CalendarUtils.getSemesterStart().weekday - 1];
-                            } else {
-                              _selectedDay = CalendarUtils.getDaysInWeek(i)[0];
-                            }
-
-                            _selectedDay = _selectedDay;
-                            _selectedPage = _selectedDay
-                                .difference(_firstCalendarDay)
-                                .inDays;
-                            _selectedWeek = i;
-                            _focusedDay = _validateDayInRange(_selectedDay);
-                            _controller.jumpToPage(_selectedPage);
-                          });
-                        },
+              contentPadding: const EdgeInsets.fromLTRB(8.0, 20.0, 8.0, 8.0),
+              backgroundColor: AppTheme.colors.background02,
+              title: const Text("Выберите неделю"),
+              content: Wrap(
+                spacing: 4.0,
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                runAlignment: WrapAlignment.center,
+                children: [
+                  for (int i = 1; i <= CalendarUtils.kMaxWeekInSemester; i++)
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: AppTheme.colors.primary,
+                        shadowColor: Colors.transparent,
                       ),
-                  ],
-                ));
+                      onPressed: () {
+                        setState(() {
+                          if (i == 1) {
+                            _selectedDay = CalendarUtils.getDaysInWeek(i)[
+                                CalendarUtils.getSemesterStart().weekday - 1];
+                          } else {
+                            _selectedDay = CalendarUtils.getDaysInWeek(i)[0];
+                          }
 
-            // show the dialog
+                          _selectedDay = _selectedDay;
+                          _selectedPage =
+                              _selectedDay.difference(_firstCalendarDay).inDays;
+                          _selectedWeek = i;
+                          _focusedDay = _validateDayInRange(_selectedDay);
+                          _controller.jumpToPage(_selectedPage);
+                        });
+                      },
+                      child: Text(i.toString()),
+                    ),
+                ],
+              ),
+            );
+
             showDialog(
-                context: context,
-                builder: (BuildContext context) {
-                  return alert;
-                });
+              context: context,
+              builder: (BuildContext context) {
+                return alert;
+              },
+            );
           },
         ),
-        const SizedBox(height: 25),
-        Expanded(
-          child: PageView.builder(
-              controller: _controller,
-              physics: const ClampingScrollPhysics(),
-              onPageChanged: (value) {
-                setState(() {
-                  // if the pages are moved by swipes
-                  if ((value - _selectedPage).abs() == 1) {
-                    if (value > _selectedPage) {
-                      _selectedDay = _selectedDay.add(const Duration(days: 1));
-                    } else if (value < _selectedPage) {
-                      _selectedDay =
-                          _selectedDay.subtract(const Duration(days: 1));
-                    }
-                    final int currentNewWeek = CalendarUtils.getCurrentWeek(
-                        mCurrentDate: _selectedDay);
-                    _selectedWeek = currentNewWeek;
-                  }
-                  _focusedDay = _validateDayInRange(_selectedDay);
-                  _selectedPage = value;
-                });
-              },
-              itemCount: _lastCalendarDay.difference(_firstCalendarDay).inDays,
-              itemBuilder: (context, index) {
-                final DateTime lessonDay =
-                    _firstCalendarDay.add(Duration(days: index));
-                final int week =
-                    CalendarUtils.getCurrentWeek(mCurrentDate: lessonDay);
-                final int lessonIndex =
-                    week >= 1 && week <= CalendarUtils.kMaxWeekInSemester
-                        ? lessonDay.weekday - 1
-                        : 6;
-                return _buildPageViewContent(context, lessonIndex, week);
-              }),
-        )
-      ],
+      ),
+    );
+  }
+
+  List<Story> _getActualStories(List<Story> stories) {
+    List<Story> actualStories = [];
+    for (final story in stories) {
+      if (DateTime.now().compareTo(story.stopShowDate) == -1) {
+        actualStories.add(story);
+      }
+    }
+
+    return actualStories;
+  }
+
+  Widget _buildStories(List<Story> stories) {
+    return SizedBox(
+      height: 80,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        itemBuilder: (_, int i) {
+          if (DateTime.now().compareTo(stories[i].stopShowDate) == -1) {
+            return Container(
+              decoration: BoxDecoration(
+                boxShadow: [
+                  BoxShadow(
+                    color: Theme.of(context).shadowColor.withOpacity(
+                        AppTheme.themeMode == ThemeMode.dark ? 0.1 : 0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: StoryWidget(
+                stories: stories,
+                storyIndex: i,
+              ),
+            );
+          }
+          return Container();
+        },
+        separatorBuilder: (_, int i) => const SizedBox(width: 10),
+        itemCount: stories.length,
+      ),
+    );
+  }
+
+  Widget _buildStoriesBuilder() {
+    return BlocBuilder<StoriesBloc, StoriesState>(builder: (context, state) {
+      if (state is StoriesInitial) {
+        context.read<StoriesBloc>().add(LoadStories());
+      } else if (state is StoriesLoaded) {
+        final actualStories = _getActualStories(state.stories);
+        if (actualStories.isNotEmpty) {
+          return _buildStories(actualStories);
+        }
+      }
+      return const SizedBox();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final isDesktop = constraints.maxWidth > tabletBreakpoint + 150;
+        if (isDesktop) {
+          return Row(
+            children: [
+              Expanded(flex: 2, child: _buildPageView()),
+              Expanded(flex: 1, child: _buildCalendar(isDesktop)),
+            ],
+          );
+        } else {
+          return NestedScrollView(
+            controller: _nestedScrollViewController,
+            headerSliverBuilder: (_, __) => [
+              SliverAppBar(
+                pinned: false,
+                title: const Text(
+                  'Расписание',
+                ),
+                // stories
+                bottom: PreferredSize(
+                  preferredSize: const Size.fromHeight(80),
+                  child: _buildStoriesBuilder(),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: _buildCalendar(false),
+              ),
+            ],
+            body: _buildPageView(),
+          );
+        }
+      },
     );
   }
 }

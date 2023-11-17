@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:rtu_mirea_app/domain/entities/update_info.dart';
 import 'package:rtu_mirea_app/presentation/bloc/update_info_bloc/update_info_bloc.dart';
-import 'package:rtu_mirea_app/presentation/colors.dart';
 import 'package:rtu_mirea_app/presentation/theme.dart';
+import 'package:rtu_mirea_app/presentation/typography.dart';
 import 'package:rtu_mirea_app/presentation/widgets/buttons/primary_button.dart';
 
 abstract class UpdateInfoDialog {
@@ -51,6 +51,16 @@ class _UpdateInfo extends StatelessWidget {
             top: 8,
             bottom: 24,
           ),
+          decoration: BoxDecoration(
+            border: Border.all(
+              width: 2.5,
+              color: AppTheme.colors.secondary,
+            ),
+            color: AppTheme.colors.background03,
+            borderRadius: const BorderRadius.all(
+              Radius.circular(25.0),
+            ),
+          ),
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
             child: Column(
@@ -59,22 +69,22 @@ class _UpdateInfo extends StatelessWidget {
               children: [
                 Text(
                   'Вышла новая версия ${data.appVersion}',
-                  style: DarkTextTheme.captionS.copyWith(
-                    color: DarkThemeColors.deactive,
+                  style: AppTextStyle.captionS.copyWith(
+                    color: AppTheme.colors.deactive,
                   ),
                 ),
                 const Padding(padding: EdgeInsets.only(top: 16)),
                 Text(
                   data.title,
                   textAlign: TextAlign.center,
-                  style: DarkTextTheme.h5,
+                  style: AppTextStyle.h5,
                 ),
                 if (data.description != null)
                   const Padding(padding: EdgeInsets.only(top: 24)),
                 if (data.description != null)
                   Text(
                     data.description!,
-                    style: DarkTextTheme.bodyL,
+                    style: AppTextStyle.bodyL,
                   ),
                 const Padding(padding: EdgeInsets.only(top: 24)),
                 Container(
@@ -89,8 +99,8 @@ class _UpdateInfo extends StatelessWidget {
                     children: [
                       Text(
                         data.text,
-                        style: DarkTextTheme.body.copyWith(
-                          color: DarkThemeColors.deactive,
+                        style: AppTextStyle.body.copyWith(
+                          color: AppTheme.colors.deactive,
                         ),
                       ),
                     ],
@@ -102,19 +112,9 @@ class _UpdateInfo extends StatelessWidget {
                 PrimaryButton(
                   text: 'Класс!',
                   onClick: () => Navigator.pop(context),
-                  // backgroundColor: DarkThemeColors.primary,
+                  // backgroundColor: AppTheme.colors.primary,
                 ),
               ],
-            ),
-          ),
-          decoration: BoxDecoration(
-            border: Border.all(
-              width: 2.5,
-              color: DarkThemeColors.secondary,
-            ),
-            color: DarkThemeColors.background03,
-            borderRadius: const BorderRadius.all(
-              Radius.circular(25.0),
             ),
           ),
         ),

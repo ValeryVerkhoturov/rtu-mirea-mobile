@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 
 import 'package:rtu_mirea_app/domain/entities/user.dart';
-import 'package:rtu_mirea_app/presentation/colors.dart';
-import 'package:rtu_mirea_app/presentation/theme.dart';
 import 'package:rtu_mirea_app/presentation/widgets/badged_container.dart';
 import 'package:rtu_mirea_app/presentation/widgets/copy_text_block.dart';
+import 'package:rtu_mirea_app/presentation/typography.dart';
+import 'package:rtu_mirea_app/presentation/theme.dart';
 
 class ProfileDetailPage extends StatelessWidget {
   const ProfileDetailPage({
@@ -16,12 +17,15 @@ class ProfileDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    var student = user.students
+        .firstWhereOrNull((element) => element.status == 'активный');
+    student ??= user.students.first;
     return Scaffold(
       appBar: AppBar(
         title: const Text("Детали профиля"),
-        backgroundColor: DarkThemeColors.background01,
+        backgroundColor: AppTheme.colors.background01,
       ),
-      backgroundColor: DarkThemeColors.background01,
+      backgroundColor: AppTheme.colors.background01,
       body: SafeArea(
         bottom: false,
         child: SingleChildScrollView(
@@ -35,15 +39,15 @@ class ProfileDetailPage extends StatelessWidget {
                   child: CircleAvatar(
                     radius: 68,
                     backgroundImage:
-                        Image.network('https://lk.mirea.ru' + user.photoUrl)
+                        Image.network('https://lk.mirea.ru${user.photoUrl}')
                             .image,
                   ),
                 ),
                 const SizedBox(height: 13),
                 Center(
                   child: Text(
-                    user.name + ' ' + user.secondName + ' ' + user.lastName,
-                    style: DarkTextTheme.h6,
+                    '${user.lastName} ${user.name} ${user.secondName}',
+                    style: AppTextStyle.h6,
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -58,39 +62,39 @@ class ProfileDetailPage extends StatelessWidget {
                         SizedBox(
                           width: 160,
                           child: BadgedContainer(
-                              label: 'Группа',
-                              text: user.academicGroup,
-                              onClick: () {}),
+                            label: 'Группа',
+                            text: student.academicGroup,
+                          ),
                         ),
                         SizedBox(
                           width: 160,
                           child: BadgedContainer(
-                              label: 'Личный номер',
-                              text: user.personalNumber,
-                              onClick: () {}),
+                            label: 'Личный номер',
+                            text: student.personalNumber,
+                          ),
                         ),
                         SizedBox(
                           width: 160,
                           child: BadgedContainer(
-                              label: 'Курс',
-                              text: user.course.toString(),
-                              onClick: () {}),
+                            label: 'Курс',
+                            text: student.course.toString(),
+                          ),
                         ),
                         SizedBox(
                           width: 160,
                           child: BadgedContainer(
-                              label: 'Состояние',
-                              text: user.isActive ? 'активный' : 'неактивный',
-                              onClick: () {}),
+                            label: 'Состояние',
+                            text: student.status,
+                          ),
                         ),
                       ]),
                 ),
                 const SizedBox(height: 20),
-                if (user.authShortlink != null)
-                  CopyTextBlockWithLabel(
-                      label: "Ссылка авторизации",
-                      text: 'https://lk.mirea.ru/auth/link/?url=' +
-                          user.authShortlink!),
+                // if (user.authShortlink != null)
+                //   CopyTextBlockWithLabel(
+                //       label: "Ссылка авторизации",
+                //       text:
+                //           'https://lk.mirea.ru/auth/link/?url=${user.authShortlink!}'),
                 const SizedBox(height: 23),
                 CopyTextBlockWithLabel(label: "Логин", text: user.login),
                 const SizedBox(height: 23),
@@ -102,11 +106,11 @@ class ProfileDetailPage extends StatelessWidget {
                 const SizedBox(height: 23),
                 CopyTextBlockWithLabel(
                     label: "Дата начала обучения",
-                    text: user.educationStartDate),
+                    text: student.educationStartDate),
                 const SizedBox(height: 23),
                 CopyTextBlockWithLabel(
                     label: "Дата окончания обучения",
-                    text: user.educationEndDate),
+                    text: student.educationEndDate),
                 const SizedBox(height: 23),
                 CopyTextBlockWithLabel(
                     label: "Дата регистрации", text: user.registerDate),
@@ -115,21 +119,24 @@ class ProfileDetailPage extends StatelessWidget {
                     label: "Последний вход", text: user.lastLoginDate),
                 const SizedBox(height: 23),
                 CopyTextBlockWithLabel(
-                    label: "Формирующее подразделение", text: user.department),
+                    label: "Формирующее подразделение",
+                    text: student.eduProgram.department),
                 const SizedBox(height: 23),
                 CopyTextBlockWithLabel(
                     label: "Выпускающее подразделение",
-                    text: user.prodDepartment),
+                    text: student.eduProgram.prodDepartment),
                 const SizedBox(height: 23),
                 CopyTextBlockWithLabel(
                     label: "Направление подготовки (специальность)",
-                    text: user.eduProgram),
+                    text: student.eduProgram.eduProgram),
                 const SizedBox(height: 23),
                 CopyTextBlockWithLabel(
-                    label: "Код направления", text: user.eduProgramCode),
+                    label: "Код направления",
+                    text: student.eduProgram.eduProgramCode),
                 const SizedBox(height: 23),
                 CopyTextBlockWithLabel(
-                    label: "Вид образовательной программы", text: user.type),
+                    label: "Вид образовательной программы",
+                    text: student.eduProgram.type ?? ""),
               ],
             ),
           ),

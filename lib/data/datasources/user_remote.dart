@@ -1,74 +1,94 @@
 import 'dart:convert';
-
+import 'dart:developer';
 import 'package:dio/dio.dart';
 import 'package:rtu_mirea_app/common/errors/exceptions.dart';
+import 'package:rtu_mirea_app/common/oauth.dart';
 import 'package:rtu_mirea_app/data/models/announce_model.dart';
 import 'package:rtu_mirea_app/data/models/attendance_model.dart';
 import 'package:rtu_mirea_app/data/models/employee_model.dart';
+import 'package:rtu_mirea_app/data/models/nfc_pass_model.dart';
 import 'package:rtu_mirea_app/data/models/score_model.dart';
 import 'package:rtu_mirea_app/data/models/user_model.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 abstract class UserRemoteData {
-  Future<String> auth(String login, String password);
-  Future<UserModel> getProfileData(String token);
-  Future<List<AnnounceModel>> getAnnounces(String token);
-  Future<List<EmployeeModel>> getEmployees(String token, String name);
-  Future<List<AttendanceModel>> getAttendance(
-      String token, String dateStart, String dateEnd);
-  Future<Map<String, List<ScoreModel>>> getScores(String token);
+  Future<String> auth();
+  Future<void> logOut();
+  Future<UserModel> getProfileData();
+  Future<List<AnnounceModel>> getAnnounces();
+  Future<List<EmployeeModel>> getEmployees(String name);
+  Future<List<AttendanceModel>> getAttendance(String dateStart, String dateEnd);
+  Future<Map<String, Map<String, List<ScoreModel>>>> getScores();
+  Future<List<NfcPassModel>> getNfcPasses(
+      String code, String studentId, String deviceId);
+  Future<int> getNfcCode(String code, String studentId, String deviceId);
+  Future<void> connectNfcPass(
+      String code, String studentId, String deviceId, String deviceName);
+  Future<void> sendNfcNotExistFeedback(
+      String fullName, String group, String personalNumber, String studentId);
 }
 
 class UserRemoteDataImpl implements UserRemoteData {
-  static const _apiUrl = 'https://lk.mirea.ru/local/ajax/mrest.php';
+  static const _apiUrl = 'https://auth-app.mirea.ru/api';
 
   final Dio httpClient;
+  final LksOauth2 lksOauth2;
 
-  UserRemoteDataImpl({required this.httpClient});
+  UserRemoteDataImpl({required this.httpClient, required this.lksOauth2});
 
   @override
-  Future<String> auth(String login, String password) async {
-    final data = {"action": "login", "login": login, "password": password};
-    final response = await httpClient.get(_apiUrl, queryParameters: data);
-    if (response.statusCode == 200) {
-      var jsonResponse = json.decode(response.data);
+  Future<String> auth() async {
+    final token = await lksOauth2.oauth2Helper.getToken();
+
+    if (token != null) {
+      return token.accessToken!;
+    } else {
+      throw ServerException('Токен не получен');
+    }
+  }
+
+  @override
+  Future<void> logOut() async {
+    await lksOauth2.oauth2Helper.removeAllTokens();
+  }
+
+  @override
+  Future<UserModel> getProfileData() async {
+    final response = await lksOauth2.oauth2Helper.get(
+      '$_apiUrl/?action=getData&url=https://lk.mirea.ru/profile/',
+    );
+
+    log('Status code: ${response.statusCode}, Response: ${response.body}',
+        name: 'getProfileData');
+
+    try {
+      var jsonResponse = json.decode(response.body);
+
       if (jsonResponse.containsKey('errors')) {
         throw ServerException(jsonResponse['errors'][0]);
       }
-      return jsonResponse['token'];
-    } else {
-      throw ServerException('Response status code is $response.statusCode');
+      if (response.statusCode == 200) {
+        return UserModel.fromJson(jsonResponse);
+      } else {
+        throw ServerException('Response status code is ${response.statusCode}');
+      }
+    } catch (e) {
+      Sentry.captureException(e, stackTrace: StackTrace.current);
+
+      throw ServerException(e.toString());
     }
   }
 
   @override
-  Future<UserModel> getProfileData(String token) async {
-    final response = await httpClient.get(
-      _apiUrl + '?action=getData&url=https://lk.mirea.ru/profile/',
-      options: Options(
-        headers: {'Authorization': token},
-      ),
-    );
-    var jsonResponse = json.decode(response.data);
-    if (jsonResponse.containsKey('errors')) {
-      throw ServerException(jsonResponse['errors'][0]);
-    }
-    if (response.statusCode == 200) {
-      return UserModel.fromRawJson(response.data);
-    } else {
-      throw ServerException('Response status code is $response.statusCode');
-    }
-  }
-
-  @override
-  Future<List<AnnounceModel>> getAnnounces(String token) async {
-    final response = await httpClient.get(
-      _apiUrl + '?action=getData&url=https://lk.mirea.ru/livestream/',
-      options: Options(
-        headers: {'Authorization': token},
-      ),
+  Future<List<AnnounceModel>> getAnnounces() async {
+    final response = await lksOauth2.oauth2Helper.get(
+      '$_apiUrl/?action=getData&url=https://lk.mirea.ru/livestream/',
     );
 
-    var jsonResponse = json.decode(response.data);
+    log('Status code: ${response.statusCode}, Response: ${response.body}',
+        name: 'getAnnounces');
+
+    var jsonResponse = json.decode(response.body);
     if (jsonResponse.containsKey('errors')) {
       throw ServerException(jsonResponse['errors'][0]);
     }
@@ -80,22 +100,20 @@ class UserRemoteDataImpl implements UserRemoteData {
       }
       return announces;
     } else {
-      throw ServerException('Response status code is $response.statusCode');
+      throw ServerException('Response status code is ${response.statusCode}');
     }
   }
 
   @override
-  Future<List<EmployeeModel>> getEmployees(String token, String name) async {
-    final response = await httpClient.get(
-      _apiUrl +
-          '?action=getData&url=https://lk.mirea.ru/lectors/&page=undefined&findname=' +
-          name,
-      options: Options(
-        headers: {'Authorization': token},
-      ),
+  Future<List<EmployeeModel>> getEmployees(String name) async {
+    final response = await lksOauth2.oauth2Helper.get(
+      '$_apiUrl/?action=getData&url=https://lk.mirea.ru/lectors/&page=undefined&findname=$name',
     );
 
-    var jsonResponse = json.decode(response.data);
+    log('Status code: ${response.statusCode}, Response: ${response.body}',
+        name: 'getEmployees');
+
+    var jsonResponse = json.decode(response.body);
     if (jsonResponse.containsKey('errors')) {
       throw ServerException(jsonResponse['errors'][0]);
     }
@@ -109,54 +127,120 @@ class UserRemoteDataImpl implements UserRemoteData {
       }
       return employees;
     } else {
-      throw ServerException('Response status code is $response.statusCode');
+      throw ServerException('Response status code is ${response.statusCode}');
     }
   }
 
   @override
-  Future<Map<String, List<ScoreModel>>> getScores(String token) async {
-    final response = await httpClient.get(
-      _apiUrl + '?action=getData&url=https://lk.mirea.ru/learning/scores/',
-      options: Options(
-        headers: {'Authorization': token},
-      ),
+  Future<Map<String, Map<String, List<ScoreModel>>>> getScores() async {
+    final response = await lksOauth2.oauth2Helper.get(
+      '$_apiUrl/?action=getData&url=https://lk.mirea.ru/learning/scores/',
     );
 
-    var jsonResponse = json.decode(response.data);
+    log('Status code: ${response.statusCode}, Response: ${response.body}',
+        name: 'getScores');
+
+    var jsonResponse = json.decode(response.body);
     if (jsonResponse.containsKey('errors')) {
       throw ServerException(jsonResponse['errors'][0]);
     }
 
     if (response.statusCode == 200) {
-      Map<String, List<ScoreModel>> scores = {};
-      jsonResponse["SCORES"].values.first.forEach((key, value) {
-        if (scores.containsKey(key) == false) {
-          scores[key] = [];
-        }
+      Map<String, Map<String, List<ScoreModel>>> scoresByStudentCode = {};
+      final scoresRes = jsonResponse["SCORES"] as Map<String, dynamic>;
 
-        for (final score in value.values) {
-          scores[key]!.add(ScoreModel.fromJson(score[0]));
-        }
+      scoresRes.forEach((studentId, semesters) {
+        Map<String, List<ScoreModel>> scoresBySemester = {};
+        final semestersRes = semesters as Map<String, dynamic>;
+
+        semestersRes.forEach((semester, subjects) {
+          List<ScoreModel> scores = [];
+          final subjectsRes = subjects as Map<String, dynamic>;
+
+          subjectsRes.forEach((subjectId, score) {
+            for (final score in score) {
+              scores.add(ScoreModel.fromJson(score));
+            }
+          });
+
+          scoresBySemester[semester] = scores;
+        });
+
+        scoresByStudentCode[studentId] = scoresBySemester;
       });
 
-      return scores;
+      return scoresByStudentCode;
     } else {
-      throw ServerException('Response status code is $response.statusCode');
+      throw ServerException('Response status code is ${response.statusCode}');
+    }
+  }
+
+  @override
+  Future<List<NfcPassModel>> getNfcPasses(
+      String code, String studentId, String deviceId) async {
+    final response = await lksOauth2.oauth2Helper
+        .get('$_apiUrl/cms/nfc-passes/$code/$studentId/$deviceId');
+
+    log('Status code: ${response.statusCode}, Response: ${response.body}',
+        name: 'getScores');
+
+    if (response.statusCode != 200) {
+      try {
+        var jsonResponse = json.decode(response.body);
+        if (jsonResponse.containsKey('message')) {
+          throw ServerException(jsonResponse['message']);
+        }
+      } catch (e) {
+        throw ServerException('Response status code is ${response.statusCode}');
+      }
+    }
+
+    var jsonResponse = json.decode(response.body);
+
+    List<NfcPassModel> userNfcPasses = [];
+    userNfcPasses = List<NfcPassModel>.from(jsonResponse['data']
+        .map((x) => NfcPassModel.fromJson(x['attributes'])));
+    return userNfcPasses;
+  }
+
+  @override
+  Future<void> connectNfcPass(
+      String code, String studentId, String deviceId, String deviceName) async {
+    final data = {
+      'code': code,
+      'studentId': studentId,
+      'deviceId': deviceId,
+      'deviceName': deviceName,
+    };
+
+    final response = await lksOauth2.oauth2Helper.post(
+      '$_apiUrl/cms/nfc-passes',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: json.encode(data),
+    );
+
+    log('Status code: ${response.statusCode}, Response: ${response.body}',
+        name: 'connectNfcPass');
+
+    if (response.statusCode != 200) {
+      throw ServerException('Response status code is ${response.statusCode}');
     }
   }
 
   @override
   Future<List<AttendanceModel>> getAttendance(
-      String token, String dateStart, String dateEnd) async {
-    final response = await httpClient.get(
-      _apiUrl +
-          '?action=getData&url=https://lk.mirea.ru/schedule/attendance/&startDate=$dateStart&endDate=$dateEnd',
-      options: Options(
-        headers: {'Authorization': token},
-      ),
+      String dateStart, String dateEnd) async {
+    final response = await lksOauth2.oauth2Helper.get(
+      '$_apiUrl/?action=getData&url=https://lk.mirea.ru/schedule/attendance/&startDate=$dateStart&endDate=$dateEnd',
     );
 
-    var jsonResponse = json.decode(response.data);
+    log('Status code: ${response.statusCode}, Response: ${response.body}',
+        name: 'getAttendance');
+
+    var jsonResponse = json.decode(response.body);
     if (jsonResponse.containsKey('errors')) {
       throw ServerException(jsonResponse['errors'][0]);
     }
@@ -166,18 +250,83 @@ class UserRemoteDataImpl implements UserRemoteData {
       if (jsonResponse["ROWS"] != null) {
         Map<String, dynamic>.from(jsonResponse["ROWS"]).forEach((date, row) {
           if (row.containsKey("START")) {
-            attendance.add(
-                AttendanceModel.fromJson(row["START"]).copyWith(date: date));
+            if (row["START"] != null) {
+              attendance.add(
+                  AttendanceModel.fromJson(row["START"]).copyWith(date: date));
+            }
           }
           if (row.containsKey("END")) {
-            attendance
-                .add(AttendanceModel.fromJson(row["END"]).copyWith(date: date));
+            if (row["END"] != null) {
+              attendance.add(
+                  AttendanceModel.fromJson(row["END"]).copyWith(date: date));
+            }
           }
         });
       }
       return attendance;
     } else {
-      throw ServerException('Response status code is $response.statusCode');
+      throw ServerException('Response status code is ${response.statusCode}');
+    }
+  }
+
+  @override
+  Future<int> getNfcCode(String code, String studentId, String deviceId) async {
+    final response = await lksOauth2.oauth2Helper
+        .get('$_apiUrl/get-nfc-code/$code/$studentId/$deviceId');
+
+    log('Status code: ${response.statusCode}, Response: ${response.body}',
+        name: 'getNfcCode');
+
+    var jsonResponse = json.decode(response.body);
+
+    if (jsonResponse.containsKey('code')) {
+      return jsonResponse['code'];
+    } else {
+      // Local api error
+      if (jsonResponse.containsKey('message')) {
+        throw ServerException(jsonResponse['message']);
+      }
+      // LKS api error
+      else if (jsonResponse.containsKey('error') &&
+          jsonResponse['error'] == 'StaffnodeNotExist') {
+        throw NfcStaffnodeNotExistException();
+      } else {
+        throw ServerException('${jsonResponse['error']}');
+      }
+    }
+  }
+
+  @override
+  Future<void> sendNfcNotExistFeedback(String fullName, String group,
+      String personalNumber, String studentId) async {
+    final data = {
+      'fullName': fullName,
+      'group': group,
+      'personalNumber': personalNumber,
+      'studentId': studentId,
+    };
+
+    final response = await lksOauth2.oauth2Helper.post(
+      '$_apiUrl/cms/nfc-pass-not-exist-feedback',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: json.encode(data),
+    );
+
+    log('Status code: ${response.statusCode}, Response: ${response.body}',
+        name: 'sendNfcNotExistFeedback');
+
+    if (response.statusCode != 200) {
+      if (response.statusCode == 400) {
+        if (response.body.contains("This attribute must be unique")) {
+          throw ServerException('Уже отправлено. Пожалуйста, подождите. '
+              'Время обработки заявки - до 7 рабочих дней.');
+        }
+      } else {
+        throw ServerException('Response status code is ${response.statusCode}');
+      }
     }
   }
 }

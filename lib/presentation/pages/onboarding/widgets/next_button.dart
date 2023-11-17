@@ -1,9 +1,8 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/src/provider.dart';
 import 'package:rtu_mirea_app/presentation/bloc/app_cubit/app_cubit.dart';
-import 'package:rtu_mirea_app/presentation/colors.dart';
-import 'package:rtu_mirea_app/presentation/core/routes/routes.gr.dart';
+import 'package:rtu_mirea_app/presentation/typography.dart';
 import 'package:rtu_mirea_app/presentation/theme.dart';
 
 /// Get next button to open next page
@@ -22,11 +21,18 @@ class NextPageViewButton extends StatelessWidget {
       onPressed: () {
         if (isLastPage) {
           context.read<AppCubit>().closeOnboarding();
-          context.router.replace(const HomeRoute());
+          context.go('/schedule');
         } else {
           onClick();
         }
       },
+      style: ElevatedButton.styleFrom(
+        foregroundColor: AppTheme.colors.primary.withOpacity(0.25),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        backgroundColor: AppTheme.colors.primary,
+        shadowColor: const Color(0x7f000000),
+        elevation: 8.0,
+      ),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: isLastPage
@@ -35,16 +41,11 @@ class NextPageViewButton extends StatelessWidget {
         child: isLastPage
             ? Text(
                 "Начать!",
-                style: DarkTextTheme.buttonS,
+                style: AppTextStyle.buttonS.copyWith(
+                  color: AppTheme.colors.white,
+                ),
               )
-            : const Icon(Icons.arrow_forward_ios, color: DarkThemeColors.white),
-      ),
-      style: ElevatedButton.styleFrom(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        onPrimary: DarkThemeColors.primary.withOpacity(0.25),
-        shadowColor: const Color(0x7f000000),
-        primary: DarkThemeColors.primary,
-        elevation: 8.0,
+            : Icon(Icons.arrow_forward_ios, color: AppTheme.colors.active),
       ),
     );
   }

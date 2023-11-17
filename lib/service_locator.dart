@@ -1,7 +1,14 @@
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_notifications_client/firebase_notifications_client.dart';
 import 'package:get_it/get_it.dart';
-import 'package:internet_connection_checker/internet_connection_checker.dart';
+import 'package:notifications_repository/notifications_repository.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:permission_client/permission_client.dart';
+import 'package:persistent_storage/persistent_storage.dart';
+import 'package:rtu_mirea_app/common/oauth.dart';
+import 'package:rtu_mirea_app/common/utils/connection_checker.dart';
 import 'package:rtu_mirea_app/data/datasources/app_settings_local.dart';
 import 'package:rtu_mirea_app/data/datasources/forum_local.dart';
 import 'package:rtu_mirea_app/data/datasources/forum_remote.dart';
@@ -27,7 +34,9 @@ import 'package:rtu_mirea_app/domain/repositories/github_repository.dart';
 import 'package:rtu_mirea_app/domain/repositories/schedule_repository.dart';
 import 'package:rtu_mirea_app/domain/repositories/strapi_repository.dart';
 import 'package:rtu_mirea_app/domain/repositories/user_repository.dart';
+import 'package:rtu_mirea_app/domain/usecases/connect_nfc_pass.dart';
 import 'package:rtu_mirea_app/domain/usecases/delete_schedule.dart';
+import 'package:rtu_mirea_app/domain/usecases/fetch_nfc_code.dart';
 import 'package:rtu_mirea_app/domain/usecases/get_active_group.dart';
 import 'package:rtu_mirea_app/domain/usecases/get_announces.dart';
 import 'package:rtu_mirea_app/domain/usecases/get_app_settings.dart';
@@ -39,6 +48,7 @@ import 'package:rtu_mirea_app/domain/usecases/get_employees.dart';
 import 'package:rtu_mirea_app/domain/usecases/get_groups.dart';
 import 'package:rtu_mirea_app/domain/usecases/get_news.dart';
 import 'package:rtu_mirea_app/domain/usecases/get_news_tags.dart';
+import 'package:rtu_mirea_app/domain/usecases/get_nfc_passes.dart';
 import 'package:rtu_mirea_app/domain/usecases/get_patrons.dart';
 import 'package:rtu_mirea_app/domain/usecases/get_schedule.dart';
 import 'package:rtu_mirea_app/domain/usecases/get_schedule_settings.dart';
@@ -48,29 +58,44 @@ import 'package:rtu_mirea_app/domain/usecases/get_update_info.dart';
 import 'package:rtu_mirea_app/domain/usecases/get_user_data.dart';
 import 'package:rtu_mirea_app/domain/usecases/log_in.dart';
 import 'package:rtu_mirea_app/domain/usecases/log_out.dart';
+import 'package:rtu_mirea_app/domain/usecases/send_nfc_not_exist_feedback.dart';
 import 'package:rtu_mirea_app/domain/usecases/set_active_group.dart';
 import 'package:rtu_mirea_app/domain/usecases/set_app_settings.dart';
 import 'package:rtu_mirea_app/domain/usecases/set_schedule_settings.dart';
+import 'package:rtu_mirea_app/presentation/app_notifier.dart';
 import 'package:rtu_mirea_app/presentation/bloc/about_app_bloc/about_app_bloc.dart';
 import 'package:rtu_mirea_app/presentation/bloc/announces_bloc/announces_bloc.dart';
 import 'package:rtu_mirea_app/presentation/bloc/app_cubit/app_cubit.dart';
 import 'package:rtu_mirea_app/presentation/bloc/attendance_bloc/attendance_bloc.dart';
-import 'package:rtu_mirea_app/presentation/bloc/auth_bloc/auth_bloc.dart';
+
 import 'package:rtu_mirea_app/presentation/bloc/employee_bloc/employee_bloc.dart';
 import 'package:rtu_mirea_app/presentation/bloc/map_cubit/map_cubit.dart';
 import 'package:rtu_mirea_app/presentation/bloc/news_bloc/news_bloc.dart';
-import 'package:rtu_mirea_app/presentation/bloc/profile_bloc/profile_bloc.dart';
+import 'package:rtu_mirea_app/presentation/bloc/nfc_feedback_bloc/nfc_feedback_bloc.dart';
+import 'package:rtu_mirea_app/presentation/bloc/nfc_pass_bloc/nfc_pass_bloc.dart';
+import 'package:rtu_mirea_app/presentation/bloc/notification_preferences/notification_preferences_bloc.dart';
 import 'package:rtu_mirea_app/presentation/bloc/schedule_bloc/schedule_bloc.dart';
 import 'package:rtu_mirea_app/presentation/bloc/scores_bloc/scores_bloc.dart';
 import 'package:rtu_mirea_app/presentation/bloc/stories_bloc/stories_bloc.dart';
 import 'package:rtu_mirea_app/presentation/bloc/update_info_bloc/update_info_bloc.dart';
+import 'package:rtu_mirea_app/presentation/bloc/user_bloc/user_bloc.dart';
+import 'package:rtu_mirea_app/presentation/core/routes/routes.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'data/repositories/schedule_repository_impl.dart';
 
 final getIt = GetIt.instance;
 
 Future<void> setup() async {
+  // Global app notifier
+  getIt.registerFactory(
+    () => AppNotifier(
+      getAppSettings: getIt(),
+      setAppSettings: getIt(),
+    ),
+  );
+
   // BloC / Cubit
   getIt.registerFactory(
     () => ScheduleBloc(
@@ -87,14 +112,11 @@ Future<void> setup() async {
   getIt.registerFactory(
       () => AboutAppBloc(getContributors: getIt(), getForumPatrons: getIt()));
   getIt.registerFactory(() => MapCubit());
-  getIt.registerFactory(
-    () => AuthBloc(
-        logOut: getIt(),
-        getAuthToken: getIt(),
-        logIn: getIt(),
-        getUserData: getIt()),
-  );
-  getIt.registerFactory(() => ProfileBloc(getUserData: getIt()));
+  getIt.registerLazySingleton(() => UserBloc(
+      logIn: getIt(),
+      logOut: getIt(),
+      getUserData: getIt(),
+      getAuthToken: getIt()));
   getIt.registerFactory(() => AnnouncesBloc(getAnnounces: getIt()));
   getIt.registerFactory(() => EmployeeBloc(getEmployees: getIt()));
   getIt.registerFactory(() => ScoresBloc(getScores: getIt()));
@@ -113,6 +135,19 @@ Future<void> setup() async {
       setAppSettings: getIt(),
     ),
   );
+  getIt.registerFactory(() => NfcPassBloc(
+        getNfcPasses: getIt(),
+        connectNfcPass: getIt(),
+        deviceInfo: getIt(),
+        fetchNfcCode: getIt(),
+        getAuthToken: getIt(),
+        getUserData: getIt(),
+        userBloc: getIt(),
+      ));
+  getIt
+      .registerFactory(() => NfcFeedbackBloc(sendNfcNotExistFeedback: getIt()));
+  getIt.registerFactory(
+      () => NotificationPreferencesBloc(notificationsRepository: getIt()));
 
   // Usecases
   getIt.registerLazySingleton(() => GetStories(getIt()));
@@ -139,6 +174,10 @@ Future<void> setup() async {
   getIt.registerLazySingleton(() => SetScheduleSettings(getIt()));
   getIt.registerLazySingleton(() => SetAppSettings(getIt()));
   getIt.registerLazySingleton(() => GetAppSettings(getIt()));
+  getIt.registerLazySingleton(() => GetNfcPasses(getIt()));
+  getIt.registerLazySingleton(() => ConnectNfcPass(getIt()));
+  getIt.registerLazySingleton(() => FetchNfcCode(getIt()));
+  getIt.registerLazySingleton(() => SendNfcNotExistFeedback(getIt()));
 
   // Repositories
   getIt.registerLazySingleton<NewsRepository>(
@@ -183,10 +222,19 @@ Future<void> setup() async {
             localDataSource: getIt(),
           ));
 
-  getIt.registerLazySingleton<UserLocalData>(
-      () => UserLocalDataImpl(sharedPreferences: getIt()));
+  getIt.registerLazySingleton<NotificationsRepository>(
+      () => NotificationsRepository(
+            permissionClient: getIt(),
+            storage: getIt<NotificationsStorage>(),
+            notificationsClient: getIt<FirebaseNotificationsClient>(),
+          ));
+
+  getIt.registerLazySingleton<UserLocalData>(() => UserLocalDataImpl(
+      sharedPreferences: getIt(),
+      secureStorage: getIt(),
+      oauthHelper: getIt<LksOauth2>().oauth2Helper));
   getIt.registerLazySingleton<UserRemoteData>(
-      () => UserRemoteDataImpl(httpClient: getIt()));
+      () => UserRemoteDataImpl(httpClient: getIt(), lksOauth2: getIt()));
   getIt.registerLazySingleton<ScheduleRemoteData>(
       () => ScheduleRemoteDataImpl(httpClient: getIt()));
   getIt.registerLazySingleton<ScheduleLocalData>(
@@ -210,11 +258,29 @@ Future<void> setup() async {
   // Common / Core
 
   // External Dependency
-  getIt.registerLazySingleton(
-      () => Dio(BaseOptions(connectTimeout: 30000, receiveTimeout: 30000)));
+  final dio = Dio(BaseOptions(receiveTimeout: const Duration(seconds: 30)));
+  getIt.registerLazySingleton(() => dio);
   final sharedPreferences = await SharedPreferences.getInstance();
   getIt.registerLazySingleton(() => sharedPreferences);
-  getIt.registerLazySingleton(() => InternetConnectionChecker());
+  const secureStorage = FlutterSecureStorage(
+      aOptions: AndroidOptions(
+    encryptedSharedPreferences: true,
+  ));
+  getIt.registerLazySingleton(() => secureStorage);
+  getIt.registerLazySingleton(() => InternetConnectionChecker.getInstance());
   final PackageInfo packageInfo = await PackageInfo.fromPlatform();
   getIt.registerLazySingleton(() => packageInfo);
+  getIt.registerLazySingleton(() => LksOauth2());
+  final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+  getIt.registerLazySingleton(() => deviceInfo);
+
+  getIt.registerLazySingleton(() => createRouter());
+  getIt.registerLazySingleton(() => FirebaseNotificationsClient(
+      firebaseMessaging: FirebaseMessaging.instance));
+  getIt.registerLazySingleton(() => const PermissionClient());
+  getIt.registerLazySingleton(
+      () => PersistentStorage(sharedPreferences: getIt()));
+  getIt.registerLazySingleton(() => NotificationsStorage(
+        storage: getIt<PersistentStorage>(),
+      ));
 }

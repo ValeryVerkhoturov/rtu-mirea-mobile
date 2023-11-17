@@ -1,9 +1,9 @@
+import 'dart:io' show Platform;
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:rtu_mirea_app/domain/entities/app_settings.dart';
 import 'package:rtu_mirea_app/domain/usecases/get_app_settings.dart';
 import 'package:rtu_mirea_app/domain/usecases/set_app_settings.dart';
-
 part 'app_state.dart';
 
 class AppCubit extends Cubit<AppState> {
@@ -16,12 +16,15 @@ class AppCubit extends Cubit<AppState> {
   void checkOnboarding() async {
     final settings = await getAppSettings();
 
-    if (settings.onboardingShown == false) {
+    final isMobileApp = Platform.isAndroid || Platform.isIOS;
+
+    if (settings.onboardingShown == false && isMobileApp) {
       await setAppSettings(
         SetAppSettingsParams(
           AppSettings(
             onboardingShown: true,
             lastUpdateVersion: settings.lastUpdateVersion,
+            theme: settings.theme,
           ),
         ),
       );

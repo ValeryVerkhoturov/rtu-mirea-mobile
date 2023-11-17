@@ -1,63 +1,137 @@
-import 'dart:io';
-
-import 'package:adaptive_theme/adaptive_theme.dart';
+import 'dart:io' show Platform;
+import 'package:dio/dio.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'package:rtu_mirea_app/common/oauth.dart';
+
 import 'package:rtu_mirea_app/common/widget_data_init.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:rtu_mirea_app/presentation/bloc/about_app_bloc/about_app_bloc.dart';
 import 'package:rtu_mirea_app/presentation/bloc/announces_bloc/announces_bloc.dart';
 import 'package:rtu_mirea_app/presentation/bloc/app_cubit/app_cubit.dart';
 import 'package:rtu_mirea_app/presentation/bloc/attendance_bloc/attendance_bloc.dart';
-import 'package:rtu_mirea_app/presentation/bloc/auth_bloc/auth_bloc.dart';
+
 import 'package:rtu_mirea_app/presentation/bloc/employee_bloc/employee_bloc.dart';
 import 'package:rtu_mirea_app/presentation/bloc/map_cubit/map_cubit.dart';
 import 'package:rtu_mirea_app/presentation/bloc/news_bloc/news_bloc.dart';
-import 'package:rtu_mirea_app/presentation/bloc/profile_bloc/profile_bloc.dart';
+import 'package:rtu_mirea_app/presentation/bloc/nfc_feedback_bloc/nfc_feedback_bloc.dart';
+import 'package:rtu_mirea_app/presentation/bloc/nfc_pass_bloc/nfc_pass_bloc.dart';
+import 'package:rtu_mirea_app/presentation/bloc/notification_preferences/notification_preferences_bloc.dart';
+
 import 'package:rtu_mirea_app/presentation/bloc/schedule_bloc/schedule_bloc.dart';
 import 'package:rtu_mirea_app/presentation/bloc/scores_bloc/scores_bloc.dart';
 import 'package:rtu_mirea_app/presentation/bloc/stories_bloc/stories_bloc.dart';
 import 'package:rtu_mirea_app/presentation/bloc/update_info_bloc/update_info_bloc.dart';
-import 'package:rtu_mirea_app/presentation/core/routes/routes.gr.dart';
+import 'package:rtu_mirea_app/presentation/bloc/user_bloc/user_bloc.dart';
 import 'package:rtu_mirea_app/presentation/theme.dart';
 import 'package:intl/intl_standalone.dart';
 import 'package:rtu_mirea_app/service_locator.dart' as dependency_injection;
+import 'package:sentry_dio/sentry_dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_strategy/url_strategy.dart';
+import 'common/constants.dart';
+import 'presentation/app_notifier.dart';
 import 'service_locator.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'firebase_options.dart';
+import 'package:provider/provider.dart';
+import 'package:sentry_logging/sentry_logging.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
+
+class GlobalBlocObserver extends BlocObserver {
+  @override
+  void onError(BlocBase bloc, Object error, StackTrace stackTrace) {
+    Sentry.captureException(error, stackTrace: stackTrace);
+
+    if (kDebugMode) {
+      print(stackTrace);
+    }
+
+    super.onError(bloc, error, stackTrace);
+  }
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
   await dependency_injection.setup();
 
   WidgetDataProvider.initData();
 
-  Platform.isAndroid
-      ? await Firebase.initializeApp()
-      : await Firebase.initializeApp(
-          options: DefaultFirebaseOptions.currentPlatform,
-        );
-
-  await FirebaseAnalytics.instance.logAppOpen();
+  if (Platform.isAndroid || Platform.isIOS) {
+    await FirebaseAnalytics.instance.logAppOpen();
+  }
 
   if (kDebugMode) {
-    // Force disable Crashlytics collection while doing every day development
-    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(false);
+    // Clear Secure Storage
+    var secureStorage = getIt<FlutterSecureStorage>();
+    await secureStorage.deleteAll();
 
     // Clear local dota
-    // var prefs = getIt<SharedPreferences>();
-    // await prefs.clear();
+    var prefs = getIt<SharedPreferences>();
+    await prefs.clear();
+
+    // Clear oauth tokens
+    var lksOauth2 = getIt<LksOauth2>();
+    await lksOauth2.oauth2Helper.removeAllTokens();
   }
 
   setPathUrlStrategy();
 
-  findSystemLocale().then((_) => runApp(const App()));
+  Intl.defaultLocale = 'ru_RU';
+
+  if (kIsWeb) {
+    Intl.systemLocale = Intl.defaultLocale!;
+  } else {
+    Intl.systemLocale = await findSystemLocale();
+  }
+
+  Bloc.observer = GlobalBlocObserver();
+
+  await SentryFlutter.init(
+    (options) {
+      options.dsn = sentryDsn;
+
+      options.enableAutoPerformanceTracing = true;
+
+      // Set tracesSampleRate to 0.2 to capture 20% of transactions for
+      // performance monitoring.
+      options.tracesSampleRate = 0.2;
+
+      options.attachScreenshot = true;
+
+      options.addIntegration(LoggingIntegration());
+    },
+    appRunner: () => runApp(
+      /// When a user experiences an error, an exception or a crash,
+      /// Sentry provides the ability to take a screenshot and include
+      /// it as an attachment.
+      SentryScreenshotWidget(
+        child: DefaultAssetBundle(
+          /// The AssetBundle instrumentation provides insight into how long
+          /// app takes to load its assets, such as files
+          bundle: SentryAssetBundle(),
+          child: ChangeNotifierProvider<AppNotifier>(
+            create: (context) => getIt<AppNotifier>(),
+            child: const App(),
+          ),
+        ),
+      ),
+    ),
+  ).then((value) {
+    final Dio dio = getIt<Dio>();
+    dio.addSentry();
+  });
 }
 
 class App extends StatelessWidget {
@@ -65,19 +139,14 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final router = getIt<GoRouter>();
+
     // blocking the orientation of the application to
     // vertical only
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitDown,
       DeviceOrientation.portraitUp,
     ]);
-
-    // deleting the system status bar color
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-    ));
-
-    final _appRouter = AppRouter();
 
     return MultiBlocProvider(
       providers: [
@@ -89,9 +158,7 @@ class App extends StatelessWidget {
         BlocProvider<AboutAppBloc>(
             create: (context) =>
                 getIt<AboutAppBloc>()..add(AboutAppGetMembers())),
-        BlocProvider<AuthBloc>(
-            create: (context) => getIt<AuthBloc>()..add(AuthLogInFromCache())),
-        BlocProvider<ProfileBloc>(create: (context) => getIt<ProfileBloc>()),
+        BlocProvider<UserBloc>(create: (context) => getIt<UserBloc>()),
         BlocProvider<AnnouncesBloc>(
             create: (context) => getIt<AnnouncesBloc>()),
         BlocProvider<EmployeeBloc>(create: (context) => getIt<EmployeeBloc>()),
@@ -104,35 +171,42 @@ class App extends StatelessWidget {
           create: (_) => getIt<UpdateInfoBloc>(),
           lazy: false, // We need to init it as soon as possible
         ),
-      ],
-      child: AdaptiveTheme(
-        light: lightTheme,
-        dark: darkTheme,
-        initial: AdaptiveThemeMode.dark,
-        builder: (theme, darkTheme) => MaterialApp.router(
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
-          supportedLocales: const [
-            Locale('en'),
-            Locale('ru'),
-          ],
-          locale: const Locale('ru'),
-          debugShowCheckedModeBanner: false,
-          title: 'Приложение РТУ МИРЭА',
-          theme: theme,
-          routerDelegate: _appRouter.delegate(
-            navigatorObservers: () => [
-              FirebaseAnalyticsObserver(
-                analytics: FirebaseAnalytics.instance,
+        if (Platform.isAndroid)
+          BlocProvider<NfcPassBloc>(
+            create: (_) => getIt<NfcPassBloc>()
+              ..add(
+                const NfcPassEvent.fetchNfcCode(),
               ),
-            ],
+            lazy: false,
           ),
-          routeInformationProvider: _appRouter.routeInfoProvider(),
-          routeInformationParser: _appRouter.defaultRouteParser(),
+        BlocProvider<NfcFeedbackBloc>(
+          create: (_) => getIt<NfcFeedbackBloc>(),
         ),
+        BlocProvider<NotificationPreferencesBloc>(
+          create: (_) => getIt<NotificationPreferencesBloc>(),
+        ),
+      ],
+      child: Consumer<AppNotifier>(
+        builder: (BuildContext context, AppNotifier value, Widget? child) {
+          return MaterialApp.router(
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            supportedLocales: const [
+              Locale('en'),
+              Locale('ru'),
+            ],
+            locale: const Locale('ru'),
+            debugShowCheckedModeBanner: false,
+            title: 'Приложение РТУ МИРЭА',
+            routerConfig: router,
+            themeMode: AppTheme.themeMode,
+            theme: AppTheme.theme,
+            darkTheme: AppTheme.darkTheme,
+          );
+        },
       ),
     );
   }

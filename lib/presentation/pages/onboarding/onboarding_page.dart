@@ -1,20 +1,19 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:rtu_mirea_app/presentation/bloc/app_cubit/app_cubit.dart';
-import 'package:rtu_mirea_app/presentation/colors.dart';
-import 'package:rtu_mirea_app/presentation/core/routes/routes.gr.dart';
-import 'package:rtu_mirea_app/presentation/theme.dart';
-
+import 'package:rtu_mirea_app/presentation/typography.dart';
 import 'widgets/indicator.dart';
 import 'widgets/next_button.dart';
+import 'package:rtu_mirea_app/presentation/theme.dart';
 
 /// OnBoarding screen that greets new users
 class OnBoardingPage extends StatefulWidget {
   const OnBoardingPage({Key? key}) : super(key: key);
+
   @override
-  _OnBoardingPageState createState() => _OnBoardingPageState();
+  State<StatefulWidget> createState() => _OnBoardingPageState();
 }
 
 class _OnBoardingPageState extends State<OnBoardingPage> {
@@ -52,7 +51,7 @@ class _OnBoardingPageState extends State<OnBoardingPage> {
   static const List titlesTexts = [
     'Добро пожаловать!',
     'Смотри расписание!',
-    'Будь в курсе, не надевая штаны!',
+    'Будь в курсе в любой момент!',
     // 'Ставь цели!',
     //'Коммуницируй!',
   ];
@@ -117,10 +116,10 @@ class _OnBoardingPageState extends State<OnBoardingPage> {
                 children: [
                   Text(
                     titlesTexts[index],
-                    style: DarkTextTheme.h4,
+                    style: AppTextStyle.h4,
                   ),
                   const SizedBox(height: 8.0),
-                  Text(contentTexts[index], style: DarkTextTheme.bodyL),
+                  Text(contentTexts[index], style: AppTextStyle.bodyL),
                 ],
               ),
             ),
@@ -146,7 +145,7 @@ class _OnBoardingPageState extends State<OnBoardingPage> {
     );
 
     return Scaffold(
-      backgroundColor: DarkThemeColors.background01,
+      backgroundColor: AppTheme.colors.background01,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -187,10 +186,10 @@ class PageIndicators extends StatefulWidget {
 
 class _PageIndicatorsState extends State<PageIndicators> {
   /// Build indicators depending on current opened page
-  List<Widget> _buildPageIndicators(int _currentPage) {
+  List<Widget> _buildPageIndicators(int currentPage) {
     List<Widget> list = [];
     for (int i = 0; i < widget.dotsNum; i++) {
-      list.add(i == _currentPage
+      list.add(i == currentPage
           ? const IndicatorPageView(isActive: true)
           : const IndicatorPageView(isActive: false));
     }
@@ -218,11 +217,13 @@ class _PageIndicatorsState extends State<PageIndicators> {
               : InkWell(
                   onTap: () {
                     context.read<AppCubit>().closeOnboarding();
-                    context.router.replace(const HomeRoute());
+                    context.go('/schedule');
                   },
                   child: Text(
                     "Пропустить",
-                    style: DarkTextTheme.buttonS,
+                    style: AppTextStyle.buttonS.copyWith(
+                      color: AppTheme.colors.active,
+                    ),
                   ),
                 ),
           Row(
